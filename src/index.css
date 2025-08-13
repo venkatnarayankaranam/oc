@@ -1,0 +1,289 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    scroll-behavior: smooth;
+  }
+
+  /* Enhanced glass card with better animations */
+  .glass-card {
+    @apply bg-white/90 backdrop-blur-lg border border-gray-200 shadow-lg rounded-lg 
+           transition-all duration-300 ease-in-out hover:shadow-xl hover:scale-[1.02]
+           hover:bg-white/95 dark:bg-gray-800/90 dark:border-gray-700;
+  }
+
+  .dark .glass-card {
+    @apply bg-gray-800/90 backdrop-blur-lg border border-gray-700 shadow-lg rounded-lg
+           hover:bg-gray-800/95;
+  }
+
+  /* Enhanced fade-in animation */
+  .fade-in {
+    @apply animate-fadeIn;
+  }
+
+  /* Staggered fade-in for lists */
+  .fade-in-stagger > * {
+    @apply opacity-0 translate-y-4;
+    animation: fadeInStagger 0.6s ease-out forwards;
+  }
+
+  .fade-in-stagger > *:nth-child(1) { animation-delay: 0.1s; }
+  .fade-in-stagger > *:nth-child(2) { animation-delay: 0.2s; }
+  .fade-in-stagger > *:nth-child(3) { animation-delay: 0.3s; }
+  .fade-in-stagger > *:nth-child(4) { animation-delay: 0.4s; }
+  .fade-in-stagger > *:nth-child(5) { animation-delay: 0.5s; }
+
+  /* Enhanced premium button */
+  .premium-button {
+    @apply px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full font-medium 
+           transition-all duration-300 ease-in-out transform hover:scale-105 
+           hover:shadow-lg hover:from-blue-700 hover:to-indigo-700 active:scale-95
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+  }
+
+  .dark .premium-button {
+    @apply bg-gradient-to-r from-gray-100 to-white text-gray-900
+           hover:from-gray-200 hover:to-white;
+  }
+
+  /* Enhanced status badges */
+  .status-badge {
+    @apply px-3 py-1 rounded-full text-sm font-medium transition-all duration-200
+           hover:scale-105 hover:shadow-md;
+  }
+
+  .status-pending {
+    @apply bg-status-pending/10 text-status-pending border border-status-pending/20;
+  }
+
+  .dark .status-pending {
+    @apply bg-status-pending/20 text-status-pending border-status-pending/30;
+  }
+
+  .status-approved {
+    @apply bg-status-approved/10 text-status-approved border border-status-approved/20;
+  }
+
+  .dark .status-approved {
+    @apply bg-status-approved/20 text-status-approved border-status-approved/30;
+  }
+
+  .status-denied {
+    @apply bg-status-denied/10 text-status-denied border border-status-denied/20;
+  }
+
+  .dark .status-denied {
+    @apply bg-status-denied/20 text-status-denied border-status-denied/30;
+  }
+
+  /* Smooth hover effects for cards */
+  .hover-lift {
+    @apply transition-all duration-300 ease-in-out hover:transform hover:-translate-y-2 hover:shadow-xl;
+  }
+
+  /* Gradient text effect */
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent;
+  }
+
+  .dark .gradient-text {
+    @apply from-blue-400 to-indigo-400;
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply relative overflow-hidden bg-gray-200 dark:bg-gray-700;
+  }
+
+  .shimmer::before {
+    content: '';
+    @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent;
+    animation: shimmer 2s infinite;
+  }
+
+  /* Floating animation for decorative elements */
+  .float-element {
+    @apply animate-float;
+  }
+
+  /* Morphing background */
+  .morph-bg {
+    @apply animate-morph bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-gray-800 dark:to-gray-900;
+  }
+
+  /* Enhanced focus states */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900;
+  }
+
+  /* Smooth transitions for all interactive elements */
+  button, a, input, select, textarea {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  /* Enhanced scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
+
+  /* Mobile-specific thin scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) transparent;
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: rgb(75 85 99) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    @apply w-1;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-gray-400 dark:bg-gray-600 rounded-full;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500 dark:bg-gray-500;
+  }
+}
+
+/* Custom keyframes for enhanced animations */
+@keyframes fadeInStagger {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Apply animations to elements with data attributes */
+[data-animate="slide-left"] {
+  animation: slideInFromLeft 0.6s ease-out;
+}
+
+[data-animate="slide-right"] {
+  animation: slideInFromRight 0.6s ease-out;
+}
+
+[data-animate="slide-top"] {
+  animation: slideInFromTop 0.6s ease-out;
+}
+
+[data-animate="slide-bottom"] {
+  animation: slideInFromBottom 0.6s ease-out;
+}
