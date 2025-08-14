@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API base URL
-const API_BASE_URL = "http://localhost:5000";
+const API_BASE_URL = "https://outingbackend.onrender.com";
 
 // MongoDB connection string (for backend implementation)
 export const MONGO_URI = "mongodb://127.0.0.1:27017/outingApp";

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Use /api prefix to leverage Vite proxy in development
-const baseURL = import.meta.env.NODE_ENV === 'development' ? '/api' : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
+const baseURL = import.meta.env.NODE_ENV === 'development' ? '/api' : (import.meta.env.VITE_API_URL || 'https://outingbackend.onrender.com');
 
 console.log('🔧 Axios Configuration Debug:', {
   NODE_ENV: import.meta.env.NODE_ENV,

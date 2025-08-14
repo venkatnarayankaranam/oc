@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, CheckCircle, XCircle, UserPlus, Home, RefreshCw, ToggleLeft, ToggleRight, PlusCircle } from "lucide-react";
+import { Clock, CheckCircle, XCircle, UserPlus, Home, RefreshCw, PlusCircle } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import axiosInstance from "@/lib/axios";  // Fixed import
@@ -56,7 +56,6 @@ const FloorInchargeDashboard = () => {
   const [isApprovedModalOpen, setIsApprovedModalOpen] = useState(false);
   
   // Current data based on toggle
-  const requests = requestType === 'outing' ? outingRequests : homePermissionRequests;
   const pendingRequests = requestType === 'outing' ? outingPendingRequests : homePermissionPendingRequests;
   const stats = requestType === 'outing' ? outingStats : homePermissionStats;
 
@@ -254,7 +253,7 @@ const FloorInchargeDashboard = () => {
   useEffect(() => {
     if (!isAuthenticated || !userDetails?.email) return;
 
-    const SOCKET_URL = 'http://localhost:5000';
+    const SOCKET_URL = 'https://outingbackend.onrender.com';
     console.log('[Socket] Connecting to:', SOCKET_URL);
 
     const socket = io(`${SOCKET_URL}/floor-incharge`, {
@@ -393,7 +392,7 @@ const FloorInchargeDashboard = () => {
     }
   };
 
-  const handleViewDetails = (request: OutingRequest) => {
+  const handleViewDetails = (request: OutingRequest | HomePermissionRequest) => {
     setSelectedStudent(request);
     setIsModalOpen(true);
   };
@@ -580,22 +579,22 @@ const FloorInchargeDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((request: any) => (
+                    {pendingRequests.map((request: OutingRequest | HomePermissionRequest) => (
                       <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <td className="py-3">{requestType === 'outing' ? request.name : request.studentName}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).name : (request as HomePermissionRequest).studentName}</td>
                         <td className="py-3">{request.rollNumber}</td>
                         <td className="py-3">{formatFloorValue(request.floor)}</td>
-                        <td className="py-3">{requestType === 'outing' ? request.roomNo : request.roomNumber}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).roomNo : (request as HomePermissionRequest).roomNumber}</td>
                         {requestType === 'outing' ? (
                           <>
-                            <td className="py-3">{request.date}</td>
-                            <td className="py-3">{request.outTime} - {request.inTime}</td>
+                            <td className="py-3">{(request as OutingRequest).date}</td>
+                            <td className="py-3">{(request as OutingRequest).outTime} - {(request as OutingRequest).inTime}</td>
                           </>
                         ) : (
                           <>
-                            <td className="py-3">{new Date(request.goingDate).toLocaleDateString()}</td>
-                            <td className="py-3">{new Date(request.incomingDate).toLocaleDateString()}</td>
-                            <td className="py-3">{request.homeTownName}</td>
+                            <td className="py-3">{new Date((request as HomePermissionRequest).goingDate).toLocaleDateString()}</td>
+                            <td className="py-3">{new Date((request as HomePermissionRequest).incomingDate).toLocaleDateString()}</td>
+                            <td className="py-3">{(request as HomePermissionRequest).homeTownName}</td>
                           </>
                         )}
                         <td className="py-3 max-w-xs truncate">{request.purpose}</td>
@@ -678,14 +677,14 @@ const FloorInchargeDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((request: OutingRequest) => (
+                    {pendingRequests.map((request: OutingRequest | HomePermissionRequest) => (
                       <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <td className="py-3">{request.name}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).name : (request as HomePermissionRequest).studentName}</td>
                         <td className="py-3">{request.rollNumber}</td>
-                        <td className="py-3">{request.floor}</td>
-                        <td className="py-3">{request.roomNo}</td>
-                        <td className="py-3">{request.date}</td>
-                        <td className="py-3">{request.outTime} - {request.inTime}</td>
+                        <td className="py-3">{formatFloorValue(request.floor)}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).roomNo : (request as HomePermissionRequest).roomNumber}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).date : `${new Date((request as HomePermissionRequest).goingDate).toLocaleDateString()} - ${new Date((request as HomePermissionRequest).incomingDate).toLocaleDateString()}`}</td>
+                        <td className="py-3">{requestType === 'outing' ? `${(request as OutingRequest).outTime} - ${(request as OutingRequest).inTime}` : (request as HomePermissionRequest).homeTownName}</td>
                         <td className="py-3">{request.purpose}</td>
                         <td className="py-3">
                           <span className={`px-2 py-1 rounded-full text-xs ${
@@ -800,12 +799,12 @@ const FloorInchargeDashboard = () => {
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent className={theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-black'}>
               <DialogHeader>
-                <DialogTitle>Student Outing Details</DialogTitle>
+                <DialogTitle>Student {requestType === 'outing' ? 'Outing' : 'Home Permission'} Details</DialogTitle>
               </DialogHeader>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="font-semibold">Name:</p>
-                  <p>{selectedStudent.name}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).name : (selectedStudent as HomePermissionRequest).studentName}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Roll Number:</p>
@@ -813,7 +812,7 @@ const FloorInchargeDashboard = () => {
                 </div>
                 <div>
                   <p className="font-semibold">Email:</p>
-                  <p>{selectedStudent.email}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).email : 'N/A'}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Floor:</p>
@@ -821,36 +820,38 @@ const FloorInchargeDashboard = () => {
                 </div>
                 <div>
                   <p className="font-semibold">Room Number:</p>
-                  <p>{selectedStudent.roomNo}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).roomNo : (selectedStudent as HomePermissionRequest).roomNumber}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Phone:</p>
-                  <p>{selectedStudent.phoneNumber}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).phoneNumber : 'N/A'}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Parent Phone:</p>
-                  <p>{selectedStudent.parentPhoneNumber}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).parentPhoneNumber : (selectedStudent as HomePermissionRequest).parentPhoneNumber}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Branch:</p>
-                  <p>{selectedStudent.branch}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).branch : 'N/A'}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Semester:</p>
-                  <p>{selectedStudent.semester}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).semester : 'N/A'}</p>
                 </div>
                 <div className="md:col-span-2">
-                  <p className="font-semibold">Outing Purpose:</p>
+                  <p className="font-semibold">{requestType === 'outing' ? 'Outing' : 'Home Permission'} Purpose:</p>
                   <p>{selectedStudent.purpose}</p>
                 </div>
                 <div>
                   <p className="font-semibold">Date:</p>
-                  <p>{selectedStudent.date}</p>
+                  <p>{requestType === 'outing' ? (selectedStudent as OutingRequest).date : `${new Date((selectedStudent as HomePermissionRequest).goingDate).toLocaleDateString()} - ${new Date((selectedStudent as HomePermissionRequest).incomingDate).toLocaleDateString()}`}</p>
                 </div>
-                <div>
-                  <p className="font-semibold">Time:</p>
-                  <p>{selectedStudent.outTime} - {selectedStudent.inTime}</p>
-                </div>
+                {requestType === 'outing' && (
+                  <div>
+                    <p className="font-semibold">Time:</p>
+                    <p>{(selectedStudent as OutingRequest).outTime} - {(selectedStudent as OutingRequest).inTime}</p>
+                  </div>
+                )}
                 <div className="md:col-span-2">
                   <p className="font-semibold">Status:</p>
                   <span className={`px-2 py-1 rounded-full text-xs ${
