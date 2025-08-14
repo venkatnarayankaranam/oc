@@ -68,35 +68,19 @@ const FloorInchargeDashboard = () => {
 
   const fetchOutingData = async () => {
     try {
+      console.log('🔄 Fetching outing data...');
       const encodedEmail = encodeURIComponent(userDetails.email);
-
       const [requestsResponse, studentsResponse, approvedResponse] = await Promise.all([
         axiosInstance.get('/outings/floor-incharge/requests'),
         axiosInstance.get(`/outings/floor-incharge/students/${encodedEmail}`),
         axiosInstance.get('/outings/floor-incharge/approved-students')
       ]);
 
-      console.log('Outing API Responses:', {
-        requests: requestsResponse.data,
-        students: studentsResponse.data
-      });
-
       if (studentsResponse.data?.success) {
-        const fetchedStudents = studentsResponse.data.students || [];
-        setStudents(fetchedStudents);
-        
-        const totalFromStudents = fetchedStudents.length;
-        const totalFromRequests = requestsResponse.data.stats?.totalStudents || 0;
-        
+        setStudents(studentsResponse.data.students);
         setOutingStats(prev => ({
           ...prev,
-          totalStudents: Math.max(totalFromStudents, totalFromRequests)
-        }));
-        
-        // Also update home permission stats with the same total students count
-        setHomePermissionStats(prev => ({
-          ...prev,
-          totalStudents: Math.max(totalFromStudents, totalFromRequests)
+          totalStudents: studentsResponse.data.students.length
         }));
       } else {
         console.error('Students response error:', studentsResponse.data);
@@ -123,6 +107,12 @@ const FloorInchargeDashboard = () => {
           semester: req.studentId?.semester || 'N/A',
         })) || [];
 
+        console.log('📊 Transformed outing requests:', {
+          total: transformedRequests.length,
+          pending: transformedRequests.filter((req: any) => req.status === 'pending').length,
+          approved: transformedRequests.filter((req: any) => req.status === 'approved').length
+        });
+
         setOutingRequests(transformedRequests);
         const pending = transformedRequests.filter((req: any) => req.status === 'pending');
         setOutingPendingRequests(pending);
@@ -133,6 +123,8 @@ const FloorInchargeDashboard = () => {
           approved: requestsResponse.data.stats?.approved || 0,
           denied: requestsResponse.data.stats?.denied || 0,
         }));
+
+        console.log('✅ Outing data updated successfully');
       } else {
         console.error('Outing requests response error:', requestsResponse.data);
         toast.error(requestsResponse.data?.message || 'Failed to fetch outing requests');
@@ -154,6 +146,7 @@ const FloorInchargeDashboard = () => {
 
   const fetchHomePermissionData = async () => {
     try {
+      console.log('🔄 Fetching home permission data...');
       const [requestsResponse] = await Promise.all([
         axiosInstance.get('/home-permissions/dashboard/floor-incharge')
       ]);
@@ -184,6 +177,12 @@ const FloorInchargeDashboard = () => {
           approvalFlow: req.approvalFlow || []
         })) || [];
 
+        console.log('📊 Transformed home permission requests:', {
+          total: transformedRequests.length,
+          pending: transformedRequests.filter((r: any) => r.floorInchargeApproval === 'pending').length,
+          approved: transformedRequests.filter((r: any) => r.floorInchargeApproval === 'approved').length
+        });
+
         setHomePermissionRequests(transformedRequests);
         // Filter by floor incharge approval status, not overall request status
         const pending = transformedRequests.filter((req: any) => req.floorInchargeApproval === 'pending');
@@ -195,6 +194,8 @@ const FloorInchargeDashboard = () => {
           approved: transformedRequests.filter((req: any) => req.floorInchargeApproval === 'approved').length,
           denied: transformedRequests.filter((req: any) => req.floorInchargeApproval === 'denied').length,
         }));
+
+        console.log('✅ Home permission data updated successfully');
       } else {
         console.error('Home permission requests response error:', requestsResponse.data);
         toast.error(requestsResponse.data?.message || 'Failed to fetch home permission requests');
@@ -322,7 +323,7 @@ const FloorInchargeDashboard = () => {
             remarks: '',
             approverInfo: {
               email: userDetails.email,
-              role: 'FloorIncharge'
+              role: 'floor-incharge' // Use lowercase with hyphen to match server validation
             }
           };
 
@@ -342,9 +343,19 @@ const FloorInchargeDashboard = () => {
         throw new Error(response.data.message || `Failed to ${action} request`);
       }
 
+      console.log('✅ Approval successful:', {
+        requestId,
+        action,
+        requestType,
+        response: response.data
+      });
+
       toast.success(`${requestType === 'outing' ? 'Outing' : 'Home permission'} request ${action}d successfully`);
       
+      // Refresh data to show updated state
+      console.log('🔄 Refreshing data after approval...');
       await fetchData();
+      console.log('✅ Data refresh completed');
 
     } catch (error: any) {
       console.error(`Request ${action} error:`, {
@@ -646,12 +657,12 @@ const FloorInchargeDashboard = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Home className="w-5 h-5" />
-              <span>All Outing Requests ({requests.length})</span>
+              <span>All Outing Requests ({pendingRequests.length})</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              {requests.length > 0 ? (
+              {pendingRequests.length > 0 ? (
                 <table className="w-full">
                   <thead>
                     <tr className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -667,7 +678,7 @@ const FloorInchargeDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {requests.map((request: OutingRequest) => (
+                    {pendingRequests.map((request: OutingRequest) => (
                       <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                         <td className="py-3">{request.name}</td>
                         <td className="py-3">{request.rollNumber}</td>
@@ -726,7 +737,7 @@ const FloorInchargeDashboard = () => {
               ) : (
                 <div className="text-center py-12">
                   <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    No outing requests found.
+                    No pending requests found.
                   </p>
                 </div>
               )}

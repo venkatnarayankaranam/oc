@@ -168,6 +168,14 @@ const HostelInchargeDashboard = () => {
     stats: homePermissionDashboardData.stats
   };
   
+  // Debug logging
+  console.log('Dashboard Debug:', {
+    requestType,
+    outingStats: outingDashboardData.stats,
+    homeStats: homePermissionDashboardData.stats,
+    selectedData: dashboardData.stats
+  });
+  
   // Generate real-time status data from dashboard stats
   const statusData = generateStatusData(dashboardData.stats);
   
