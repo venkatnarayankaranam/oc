@@ -33,7 +33,7 @@ const ADMIN_CREDENTIALS = {
 };
 
 // Backend URL - Remove render URL and replace with localhost
-const backendUrl = "http://localhost:5000";
+const backendUrl = "https://outingbackend.onrender.com";
 
 // Interactive Feature Cards Component
 const InteractiveFeatureCards = ({ theme }: { theme: string }) => {

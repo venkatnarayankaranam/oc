@@ -61,7 +61,7 @@ const NotificationsDialog = ({ isOpen, onClose }: NotificationsDialogProps) => {
       const token = localStorage.getItem('token');
       if (!token) return;
       const namespace = userRole === 'student' ? '/student' : userRole === 'hostel-incharge' ? '/hostel-incharge' : userRole === 'floor-incharge' ? '/floor-incharge' : '/warden';
-      socket = io(`http://localhost:5000${namespace}`, {
+      socket = io(`https://outingbackend.onrender.com${namespace}`, {
         auth: { token },
         path: '/socket.io'
       });

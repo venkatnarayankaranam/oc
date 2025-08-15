@@ -268,7 +268,7 @@ const FloorInchargeDashboard = () => {
   useEffect(() => {
     if (!isAuthenticated || !userDetails?.email) return;
 
-    const SOCKET_URL = 'http://localhost:5000';
+    const SOCKET_URL = 'https://outingbackend.onrender.com';
     console.log('[Socket] Connecting to:', SOCKET_URL);
 
     const socket = io(`${SOCKET_URL}/floor-incharge`, {
