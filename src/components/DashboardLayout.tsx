@@ -34,6 +34,7 @@ const DashboardLayout = ({
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -43,6 +44,33 @@ const DashboardLayout = ({
       navigate("/login");
     }
   }, [isAuthenticated, userRole, navigate]);
+
+  // Keep the bell badge in sync with unread notifications
+  useEffect(() => {
+    const updateBadge = () => {
+      const el = document.getElementById('notif-badge');
+      if (!el) return;
+      const count = unreadCount;
+      el.textContent = count > 99 ? '99+' : String(count || '');
+      el.style.display = count > 0 ? 'flex' : 'none';
+    };
+    updateBadge();
+  }, [unreadCount]);
+
+  // Listen for unread count updates from NotificationsDialog
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'unread_notifications_count') {
+        const v = Number(e.newValue || '0');
+        setUnreadCount(v);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    // initial fetch (if present)
+    const initVal = Number(localStorage.getItem('unread_notifications_count') || '0');
+    setUnreadCount(initVal);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -100,8 +128,9 @@ const DashboardLayout = ({
               aria-label="Notifications"
             >
               <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1 w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-r from-red-500 to-pink-500 rounded-full text-white text-[8px] sm:text-[10px] flex items-center justify-center shadow-lg animate-pulse">
-                2
+              {/* Dynamic unread count badge from NotificationsDialog via storage event */}
+              <span id="notif-badge" className="absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1 min-w-[12px] h-3 sm:min-w-[16px] sm:h-4 px-1 bg-gradient-to-r from-red-500 to-pink-500 rounded-full text-white text-[8px] sm:text-[10px] flex items-center justify-center shadow-lg animate-pulse">
+                {/* will be filled by effect below */}
               </span>
             </button>
 

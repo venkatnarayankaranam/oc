@@ -30,6 +30,10 @@ const NotificationsDialog = ({ isOpen, onClose }: NotificationsDialogProps) => {
           type: n.type || 'system'
         }));
         setNotifications(mapped);
+        // propagate unread count to layout badge via localStorage event
+        const count = Number(resp.data.unreadCount || 0);
+        localStorage.setItem('unread_notifications_count', String(count));
+        window.dispatchEvent(new StorageEvent('storage', { key: 'unread_notifications_count', newValue: String(count) }));
       }
     } catch (e) {
       // silent fail
@@ -40,13 +44,24 @@ const NotificationsDialog = ({ isOpen, onClose }: NotificationsDialogProps) => {
     fetchNotifications();
   }, [userRole, isOpen]);
 
+  // When opened, mark all as read on clear
+  const clearAll = async () => {
+    try {
+      await axiosInstance.patch('/notifications/mark-all-read');
+      setNotifications(prev => prev.map(n => n));
+      localStorage.setItem('unread_notifications_count', '0');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'unread_notifications_count', newValue: '0' }));
+      onClose();
+    } catch {}
+  };
+
   useEffect(() => {
     let socket: Socket | null = null;
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
       const namespace = userRole === 'student' ? '/student' : userRole === 'hostel-incharge' ? '/hostel-incharge' : userRole === 'floor-incharge' ? '/floor-incharge' : '/warden';
-      socket = io(`https://outingbackend.onrender.com${namespace}`, {
+      socket = io(`http://localhost:5000${namespace}`, {
         auth: { token },
         path: '/socket.io'
       });
@@ -61,7 +76,10 @@ const NotificationsDialog = ({ isOpen, onClose }: NotificationsDialogProps) => {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Notifications</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>Notifications</DialogTitle>
+            <button onClick={clearAll} className="text-xs px-2 py-1 rounded border hover:bg-gray-50">Clear</button>
+          </div>
         </DialogHeader>
         <ScrollArea className="h-[300px] pr-4">
           <div className="space-y-4">

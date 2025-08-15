@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, CheckCircle, XCircle, UserPlus, Home, RefreshCw, PlusCircle } from "lucide-react";
+import { Clock, CheckCircle, XCircle, UserPlus, Home, RefreshCw, PlusCircle, AlertTriangle } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import axiosInstance from "@/lib/axios";  // Fixed import
@@ -59,6 +59,11 @@ const FloorInchargeDashboard = () => {
   const pendingRequests = requestType === 'outing' ? outingPendingRequests : homePermissionPendingRequests;
   const stats = requestType === 'outing' ? outingStats : homePermissionStats;
 
+  // Emergency requests that bypass floor incharge
+  const emergencyRequests = requestType === 'outing' 
+    ? outingRequests.filter(req => (req as any)?.category === 'emergency')
+    : homePermissionRequests.filter(req => (req as any)?.category === 'emergency');
+
   const formatFloorValue = (floor: string | string[] | undefined): string => {
     if (!floor) return 'N/A';
     if (Array.isArray(floor)) return floor.join(', ');
@@ -94,8 +99,8 @@ const FloorInchargeDashboard = () => {
           roomNo: req.studentId?.roomNumber || 'N/A',
           floor: req.floor,
           date: new Date(req.outingDate).toLocaleDateString(),
-          outTime: req.outingTime,
-          inTime: req.returnTime,
+          outTime: req.outingTime || '',
+          inTime: req.returnTime || '',
           status: req.status,
           purpose: req.purpose,
           studentId: req.studentId?._id,
@@ -116,11 +121,16 @@ const FloorInchargeDashboard = () => {
         const pending = transformedRequests.filter((req: any) => req.status === 'pending');
         setOutingPendingRequests(pending);
 
+        // Compute counts locally to ensure immediate UI update
+        const approvedCount = transformedRequests.filter((req: any) => req.status === 'approved').length;
+        const deniedCount = transformedRequests.filter((req: any) => req.status === 'denied').length;
+        const pendingCount = pending.length;
+
         setOutingStats(prev => ({
           ...prev,
-          pending: requestsResponse.data.stats?.pending || pending.length,
-          approved: requestsResponse.data.stats?.approved || 0,
-          denied: requestsResponse.data.stats?.denied || 0,
+          pending: pendingCount,
+          approved: approvedCount,
+          denied: deniedCount,
         }));
 
         console.log('✅ Outing data updated successfully');
@@ -187,11 +197,16 @@ const FloorInchargeDashboard = () => {
         const pending = transformedRequests.filter((req: any) => req.floorInchargeApproval === 'pending');
         setHomePermissionPendingRequests(pending);
 
+        // Compute counts locally to ensure immediate UI update
+        const approvedCount = transformedRequests.filter((req: any) => req.floorInchargeApproval === 'approved').length;
+        const pendingCount = pending.length;
+        const deniedCount = transformedRequests.filter((req: any) => req.status === 'denied').length;
+
         setHomePermissionStats(prev => ({
           ...prev,
-          pending: pending.length, // Use the correctly filtered pending count
-          approved: transformedRequests.filter((req: any) => req.floorInchargeApproval === 'approved').length,
-          denied: transformedRequests.filter((req: any) => req.floorInchargeApproval === 'denied').length,
+          pending: pendingCount,
+          approved: approvedCount,
+          denied: deniedCount,
         }));
 
         console.log('✅ Home permission data updated successfully');
@@ -253,7 +268,7 @@ const FloorInchargeDashboard = () => {
   useEffect(() => {
     if (!isAuthenticated || !userDetails?.email) return;
 
-    const SOCKET_URL = 'https://outingbackend.onrender.com';
+    const SOCKET_URL = 'http://localhost:5000';
     console.log('[Socket] Connecting to:', SOCKET_URL);
 
     const socket = io(`${SOCKET_URL}/floor-incharge`, {
@@ -275,6 +290,34 @@ const FloorInchargeDashboard = () => {
         console.log('[Socket] Joining room:', room);
         socket.emit('join-room', { room });
       }
+    });
+
+    // Listen for real-time updates
+    socket.on('request-update', (data) => {
+      console.log('[Socket] Received request update:', data);
+      if (data.type === 'status-change') {
+        // Refresh data immediately when a request status changes
+        fetchData();
+      }
+    });
+
+    // Listen for specific outing request updates
+    socket.on('outing-request-updated', (data) => {
+      console.log('[Socket] Received outing request update:', data);
+      fetchOutingData();
+    });
+
+    // Listen for specific home permission updates
+    socket.on('home-permission-updated', (data) => {
+      console.log('[Socket] Received home permission update:', data);
+      fetchHomePermissionData();
+    });
+
+    // Listen for emergency request notifications
+    socket.on('emergency-request', (data) => {
+      console.log('[Socket] Emergency request received:', data);
+      toast.warning('🚨 New emergency request received!');
+      fetchData();
     });
 
     return () => {
@@ -307,19 +350,24 @@ const FloorInchargeDashboard = () => {
         let comments = '';
         if (action === 'approve') {
           comments = window.prompt('Add approval note (who is taking out, who permitted, etc.)') || '';
+          if (!comments.trim()) {
+            toast.error('Approval note is required for approval');
+            return;
+          }
         } else {
-          comments = 'Denied by Floor Incharge';
+          comments = window.prompt('Add denial reason (optional):') || 'Denied by Floor Incharge';
         }
         response = await axiosInstance.patch(`/outings/floor-incharge/request/${requestId}/${action}`, { comments });
       } else {
         // For home permissions, use the approve/deny endpoints
         if (action === 'approve') {
+          const approvalNote = window.prompt('Add approval note (optional):') || '';
           const approvalEntry = {
             level: 1, // Floor incharge level
             status: 'approved',
             timestamp: new Date().toISOString(),
             approvedBy: userDetails.email,
-            remarks: '',
+            remarks: approvalNote,
             approverInfo: {
               email: userDetails.email,
               role: 'floor-incharge' // Use lowercase with hyphen to match server validation
@@ -332,8 +380,9 @@ const FloorInchargeDashboard = () => {
             status: 'approved'
           });
         } else {
+          const denialReason = window.prompt('Add denial reason (optional):') || 'Denied by Floor Incharge';
           response = await axiosInstance.post(`/home-permissions/${requestId}/deny`, {
-            remarks: 'Denied by Floor Incharge'
+            remarks: denialReason
           });
         }
       }
@@ -588,7 +637,7 @@ const FloorInchargeDashboard = () => {
                         {requestType === 'outing' ? (
                           <>
                             <td className="py-3">{(request as OutingRequest).date}</td>
-                            <td className="py-3">{(request as OutingRequest).outTime} - {(request as OutingRequest).inTime}</td>
+                            <td className="py-3">{(request as OutingRequest).outTime || '—'} - {(request as OutingRequest).inTime || '—'}</td>
                           </>
                         ) : (
                           <>
@@ -651,6 +700,108 @@ const FloorInchargeDashboard = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Emergency Requests Section */}
+        {emergencyRequests.length > 0 && (
+          <Card className={`${theme === 'dark' ? 'bg-red-900/20 border-red-700' : 'bg-red-50 border-red-200'}`}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-red-700">
+                <AlertTriangle className="w-5 h-5" />
+                <span>🚨 Emergency {requestType === 'outing' ? 'Outing' : 'Home Permission'} Requests ({emergencyRequests.length})</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  <strong>Note:</strong> Emergency requests bypass floor incharge approval and go directly to hostel incharge. 
+                  These are displayed for your information only.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className={`border-b ${theme === 'dark' ? 'border-red-700' : 'border-red-200'}`}>
+                      <th className="text-left py-3">Student</th>
+                      <th className="text-left py-3">Roll No.</th>
+                      <th className="text-left py-3">Floor</th>
+                      <th className="text-left py-3">Room</th>
+                      <th className="text-left py-3">Parent Phone</th>
+                      {requestType === 'outing' ? (
+                        <>
+                          <th className="text-left py-3">Date</th>
+                          <th className="text-left py-3">Time</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="text-left py-3">Going Date</th>
+                          <th className="text-left py-3">Return Date</th>
+                          <th className="text-left py-3">Home Town</th>
+                        </>
+                      )}
+                      <th className="text-left py-3">Purpose</th>
+                      <th className="text-left py-3">Status</th>
+                      <th className="text-right py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emergencyRequests.map((request: OutingRequest | HomePermissionRequest) => (
+                      <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-red-700' : 'border-red-200'} bg-red-50 dark:bg-red-900/20`}>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            {requestType === 'outing' ? (request as OutingRequest).name : (request as HomePermissionRequest).studentName}
+                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded animate-pulse">
+                              🚨 EMERGENCY
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3">{request.rollNumber}</td>
+                        <td className="py-3">{formatFloorValue(request.floor)}</td>
+                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).roomNo : (request as HomePermissionRequest).roomNumber}</td>
+                        <td className="py-3 font-semibold text-red-600">
+                          {requestType === 'outing' ? (request as OutingRequest).parentPhoneNumber : (request as HomePermissionRequest).parentPhoneNumber}
+                        </td>
+                        {requestType === 'outing' ? (
+                          <>
+                            <td className="py-3">{(request as OutingRequest).date}</td>
+                            <td className="py-3">{(request as OutingRequest).outTime || '—'} - {(request as OutingRequest).inTime || '—'}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="py-3">{new Date((request as HomePermissionRequest).goingDate).toLocaleDateString()}</td>
+                            <td className="py-3">{new Date((request as HomePermissionRequest).incomingDate).toLocaleDateString()}</td>
+                            <td className="py-3">{(request as HomePermissionRequest).homeTownName}</td>
+                          </>
+                        )}
+                        <td className="py-3 max-w-xs truncate">{request.purpose}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleViewDetails(request)}
+                              className="border-red-300 hover:bg-red-100 text-red-700"
+                            >
+                              View
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className={`${theme === 'dark' ? 'bg-gray-800/90 border-gray-700' : 'glass-card'}`}>
           <CardHeader>

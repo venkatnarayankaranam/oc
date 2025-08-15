@@ -26,6 +26,9 @@ const StudentDashboard = () => {
   // Modal states
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   
+  // Graduated restriction
+  const isGraduated = (userDetails as any)?.status === 'Graduated';
+  
   // Outing form states
   const [date, setDate] = useState("");
   const [outTime, setOutTime] = useState("");
@@ -118,6 +121,9 @@ const StudentDashboard = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  // When student data is fetched, lock UI if graduated
+  const graduatedMessage = "You have graduated. You can view your past records only.";
 
   // Fetch disciplinary actions for the logged-in student
   useEffect(() => {
@@ -308,7 +314,7 @@ const StudentDashboard = () => {
 
   // Check if student has an active request that prevents new requests
   const hasActiveRequest = activeRequests.length > 0;
-  const canCreateNewRequest = !hasActiveRequest;
+  const canCreateNewRequest = !hasActiveRequest && !isGraduated;
 
   // Download past requests as PDF
   const downloadPastRequestsPDF = async () => {

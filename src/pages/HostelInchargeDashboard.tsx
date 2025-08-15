@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, CheckCircle, XCircle, Building, PieChart, Activity, Download, UserPlus, Users, Edit, Trash2, Calendar, FileText, Search, Filter, AlertTriangle, Shield, Home, PlusCircle, ToggleLeft, ToggleRight, Eye } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Building, PieChart, Activity, Download, UserPlus, Users, Edit, Trash2, Calendar, FileText, Search, Filter, AlertTriangle, Shield, Home, PlusCircle, ToggleLeft, ToggleRight, Eye, RefreshCw } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import axiosInstance from "@/lib/axios";  // Update import path
@@ -89,6 +89,8 @@ interface Student {
   parentPhoneNumber: string;
   branch: string;
   semester: number;
+  year?: '1st' | '2nd' | '3rd' | '4th';
+  status?: 'Active' | 'Graduated';
 }
 
 interface StudentsResponse {
@@ -212,6 +214,13 @@ const HostelInchargeDashboard = () => {
   const [editForm, setEditForm] = useState<Partial<Student>>({});
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  // Floor incharge password mgmt + bulk promotion
+  const [floorIncharges, setFloorIncharges] = useState<Array<{_id:string; name:string; email:string;}>>([]);
+  const [fiPasswords, setFiPasswords] = useState<Record<string,string>>({});
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [promotionTarget, setPromotionTarget] = useState<'2nd'|'3rd'|'4th'|'Graduated'|'none'>('none');
+  const [passedOutStudents, setPassedOutStudents] = useState<Student[]>([]);
+
   // Disciplinary modal state
   const [isDisciplinaryModalOpen, setIsDisciplinaryModalOpen] = useState(false);
   const [disciplinaryTargetStudent, setDisciplinaryTargetStudent] = useState<Student | null>(null);
@@ -317,7 +326,61 @@ const HostelInchargeDashboard = () => {
     return Array.from(floors).sort();
   };
 
+  // Selection helpers for bulk actions
+  const isStudentSelected = (id: string) => selectedStudentIds.includes(id);
+  const selectAllInBlock = (block: string) => {
+    const all = (studentsByBlocks[block] || []);
+    const filtered = filterStudents(all); // respect current search and floor filters
+    const ids = filtered.map(s => s._id);
+    const newSet = new Set(selectedStudentIds);
+    ids.forEach(id => newSet.add(id));
+    setSelectedStudentIds(Array.from(newSet));
+  };
+  const clearSelection = () => setSelectedStudentIds([]);
+
   // Generate weekly trends data from requests
+  const fetchFloorIncharges = async () => {
+    try {
+      const resp = await axiosInstance.get('/api/admin/users/floor-incharges');
+      if (resp.data?.success) setFloorIncharges(resp.data.users || []);
+    } catch (e) { console.error('Failed to load floor incharges', e); }
+  };
+
+  const fetchPassedOutStudents = async () => {
+    try {
+      const resp = await axiosInstance.get('/api/hostelincharge/students/passedout');
+      if (resp.data?.success) setPassedOutStudents(resp.data.students || []);
+    } catch (e) { console.error('Failed to load passed out students', e); }
+  };
+
+  const toggleStudentSelection = (id: string) => {
+    setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const applyPromotion = async () => {
+    if (promotionTarget === 'none' || selectedStudentIds.length === 0) return;
+    try {
+      const resp = await axiosInstance.put('/api/hostelincharge/students/promote', {
+        studentIds: selectedStudentIds,
+        targetYear: promotionTarget === 'Graduated' ? 'Graduated' : promotionTarget,
+      });
+      if (resp.data?.success) {
+        toast.success('Updated successfully');
+        setPromotionTarget('none');
+        setSelectedStudentIds([]);
+        // refresh current students and passed-out pool
+        await Promise.all([fetchStudentsByBlocks(), fetchPassedOutStudents()]);
+      }
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Failed to apply update');
+    }
+  };
+
+  useEffect(() => {
+    fetchFloorIncharges();
+    fetchPassedOutStudents();
+  }, []);
+
   const generateWeeklyTrendsData = (requests: OutingRequest[]) => {
     const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const trendsMap = new Map();
@@ -478,12 +541,10 @@ const HostelInchargeDashboard = () => {
     };
 
     initialize();
-    const intervalId = setInterval(initialize, 30000);
 
     return () => {
       mounted = false;
       controller.abort();
-      clearInterval(intervalId);
     };
   }, [userDetails?.email, isAuthenticated, navigate, logout]);
 
@@ -841,30 +902,25 @@ const HostelInchargeDashboard = () => {
 
       const params = new URLSearchParams({
         startDate: reportStartDate,
-        endDate: reportEndDate,
-        status: reportStatus === 'all' ? '' : reportStatus,
-        studentId: reportSelectedStudent === 'all' ? '' : reportSelectedStudent
+        endDate: reportEndDate
       });
 
-      const response = await axiosInstance.get(`/reports/download-custom?${params.toString()}`, {
+      // Call unified report endpoint to include both outings and home permissions
+      const response = await axiosInstance.get(`/reports/unified?${params.toString()}`, {
         responseType: 'blob'
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      
-      const studentName = reportSelectedStudent !== 'all' 
-        ? Object.values(studentsByBlocks).flat().find(s => s._id === reportSelectedStudent)?.name || 'student'
-        : 'all-students';
-      
-      const filename = `outing-report-${reportStartDate}-to-${reportEndDate}-${studentName}.pdf`;
+
+      const filename = `custom-outing-report-${reportStartDate}-to-${reportEndDate}.pdf`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Report downloaded successfully');
     } catch (error: any) {
       console.error('Report download error:', error);
@@ -977,42 +1033,68 @@ const HostelInchargeDashboard = () => {
             </p>
           </div>
           
-          {/* Mobile-optimized Request Type Toggle */}
-          <div className={`relative flex items-center p-1 rounded-full border-2 ${
-            theme === 'dark' 
-              ? 'bg-gray-800 border-gray-600' 
-              : 'bg-gray-100 border-gray-300'
-          } shadow-lg self-start sm:self-auto`}>
-            {/* Background slider */}
-            <div className={`absolute top-1 bottom-1 w-1/2 rounded-full transition-all duration-300 ease-in-out ${
-              theme === 'dark' ? 'bg-blue-600' : 'bg-blue-500'
-            } ${requestType === 'home' ? 'translate-x-full' : 'translate-x-0'}`} />
-            
-            {/* Outing Button */}
-            <button
-              onClick={() => setRequestType('outing')}
-              className={`relative z-10 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 flex-1 ${
-                requestType === 'outing' 
-                  ? 'text-white' 
-                  : theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'
-              }`}
+          {/* Actions: Toggle + Manual Refresh */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            {/* Toggle */}
+            <div className={`relative flex items-center p-1 rounded-full border-2 ${
+              theme === 'dark' 
+                ? 'bg-gray-800 border-gray-600' 
+                : 'bg-gray-100 border-gray-300'
+            } shadow-lg self-start sm:self-auto`}>
+              <div className={`absolute top-1 bottom-1 w-1/2 rounded-full transition-all duration-300 ease-in-out ${
+                theme === 'dark' ? 'bg-blue-600' : 'bg-blue-500'
+              } ${requestType === 'home' ? 'translate-x-full' : 'translate-x-0'}`} />
+              <button
+                onClick={() => setRequestType('outing')}
+                className={`relative z-10 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 flex-1 ${
+                  requestType === 'outing' 
+                    ? 'text-white' 
+                    : theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span className="text-sm font-medium">Outing</span>
+              </button>
+              <button
+                onClick={() => setRequestType('home')}
+                className={`relative z-10 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 flex-1 ${
+                  requestType === 'home' 
+                    ? 'text-white' 
+                    : theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <Home className="w-4 h-4" />
+                <span className="text-sm font-medium">Home</span>
+              </button>
+            </div>
+
+            {/* Manual Refresh */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  await Promise.all([
+                    fetchOutingDashboardData(),
+                    fetchHomePermissionDashboardData(),
+                    fetchApprovedStudents(),
+                    activeTab === 'students' ? fetchStudentsByBlocks() : Promise.resolve()
+                  ]);
+                  toast.success('Dashboard refreshed');
+                } catch (e) {
+                  console.error('Manual refresh error:', e);
+                  toast.error('Failed to refresh dashboard');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="self-start sm:self-auto"
+              title="Refresh dashboard data"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span className="text-sm font-medium">Outing</span>
-            </button>
-            
-            {/* Home Button */}
-            <button
-              onClick={() => setRequestType('home')}
-              className={`relative z-10 flex items-center justify-center gap-1.5 px-3 py-2 rounded-full transition-all duration-300 flex-1 ${
-                requestType === 'home' 
-                  ? 'text-white' 
-                  : theme === 'dark' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              <Home className="w-4 h-4" />
-              <span className="text-sm font-medium">Home</span>
-            </button>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
           </div>
         </div>
 
@@ -1034,6 +1116,67 @@ const HostelInchargeDashboard = () => {
 
           {/* Dashboard Tab */}
           <TabsContent value="dashboard" className="space-y-4 md:space-y-6">
+            {/* Manage Floor Incharge Passwords */}
+            <Card className={`${theme === 'dark' ? 'bg-gray-800/90 border-gray-700' : 'glass-card'}`}>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Manage Floor Incharge Passwords
+                </CardTitle>
+                <p className="text-xs text-gray-500">Update passwords for floor incharges periodically.</p>
+              </CardHeader>
+              <CardContent>
+                {floorIncharges.length === 0 ? (
+                  <div className="text-gray-500 text-sm">No floor incharges found.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 px-2">Name</th>
+                          <th className="py-2 px-2">Email</th>
+                          <th className="py-2 px-2">New Password</th>
+                          <th className="py-2 px-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {floorIncharges.map((fi) => (
+                          <tr key={fi._id} className="border-b">
+                            <td className="py-2 px-2">{fi.name}</td>
+                            <td className="py-2 px-2">{fi.email}</td>
+                            <td className="py-2 px-2">
+                              <Input
+                                type="password"
+                                placeholder="Enter new password"
+                                value={fiPasswords[fi._id] || ''}
+                                onChange={(e) => setFiPasswords(prev => ({ ...prev, [fi._id]: e.target.value }))}
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right">
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  const pwd = (fiPasswords[fi._id] || '').trim();
+                                  if (!pwd || pwd.length < 6) { toast.error('Password must be at least 6 chars'); return; }
+                                  try {
+                                    const resp = await axiosInstance.put(`/api/admin/floorincharge/${fi._id}/password`, { newPassword: pwd });
+                                    if (resp.data?.success) { toast.success('Password updated'); setFiPasswords(prev => ({ ...prev, [fi._id]: '' })); }
+                                  } catch (e: any) {
+                                    toast.error(e.response?.data?.message || 'Failed to update');
+                                  }
+                                }}
+                              >
+                                Update Password
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
               <Dialog open={isRegisterModalOpen} onOpenChange={setIsRegisterModalOpen}>
                 <DialogTrigger asChild>
@@ -1117,7 +1260,7 @@ const HostelInchargeDashboard = () => {
                           <SelectContent>
                             {userDetails?.assignedBlocks?.map((block: string) => (
                               <SelectItem key={block} value={block === 'W-Block' ? 'Womens-Block' : block}>
-                                {block === 'W-Block' ? 'W-Block (Women)' : `${block} (Boys)`}
+                                {block === 'W-Block' ? 'W-Block (Women)' : `${block} (Girls)`}
                               </SelectItem>
                             )) || (
                               <>
@@ -1430,6 +1573,16 @@ const HostelInchargeDashboard = () => {
                               </div>
                             </div>
                             
+                            {/* Parent Phone Number - Important for Emergency Requests */}
+                            {isEmergency && (
+                              <div>
+                                <span className="text-gray-500 text-xs">Parent Phone:</span>
+                                <p className="text-sm font-medium text-red-600 font-semibold">
+                                  {request?.parentPhoneNumber || 'N/A'}
+                                </p>
+                              </div>
+                            )}
+                            
                             {/* Purpose */}
                             <div>
                               <span className="text-gray-500 text-xs">Purpose:</span>
@@ -1510,6 +1663,7 @@ const HostelInchargeDashboard = () => {
                         <th className="text-left py-3 text-sm">Date & Time</th>
                         <th className="text-left py-3 text-sm">Purpose</th>
                         <th className="text-left py-3 text-sm">Floor Incharge</th>
+                        <th className="text-left py-3 text-sm">Parent Phone</th>
                         <th className="text-left py-3 text-sm">Status</th>
                         <th className="text-right py-3 text-sm">Actions</th>
                       </tr>
@@ -1567,6 +1721,7 @@ const HostelInchargeDashboard = () => {
                                   })()}
                                 </span>
                               </td>
+                              <td className="py-3">{request?.parentPhoneNumber || 'N/A'}</td>
                               <td className="py-3">
                                 <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(request as OutingRequest)}`}>
                                   {getStatusText(request as OutingRequest)}
@@ -1693,6 +1848,28 @@ const HostelInchargeDashboard = () => {
                     </Button>
                   )}
                 </div>
+
+                {/* Bulk selection bar */}
+                {selectedStudentIds.length > 0 && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <Select value={promotionTarget} onValueChange={(v: any) => setPromotionTarget(v)}>
+                      <SelectTrigger className="w-56">
+                        <SelectValue placeholder="Select action" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2nd">Promote to 2nd Year</SelectItem>
+                        <SelectItem value="3rd">Promote to 3rd Year</SelectItem>
+                        <SelectItem value="4th">Promote to 4th Year</SelectItem>
+                        <SelectItem value="Graduated">Mark as Graduated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={applyPromotion} disabled={promotionTarget === 'none'}>
+                      Apply to ({selectedStudentIds.length}) selected
+                    </Button>
+                    <Button variant="outline" onClick={clearSelection}>Clear Selection</Button>
+                  </div>
+                )}
+
                 {(searchTerm || selectedFloor !== 'all') && (
                   <div className="mt-3 flex justify-between items-start text-sm text-gray-500">
                     <div>
@@ -1740,11 +1917,14 @@ const HostelInchargeDashboard = () => {
                         <Building className="w-5 h-5" />
                         {block === 'W-Block' ? "Women's Block" : block}
                       </div>
-                      <div className="text-sm font-normal text-gray-500">
-                        {filteredBlockStudents.length !== allBlockStudents.length ? 
-                          `${filteredBlockStudents.length}/${allBlockStudents.length}` : 
-                          `${allBlockStudents.length}`
-                        } students
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => selectAllInBlock(block)}>Select all</Button>
+                        <div className="text-sm font-normal text-gray-500">
+                          {filteredBlockStudents.length !== allBlockStudents.length ? 
+                            `${filteredBlockStudents.length}/${allBlockStudents.length}` : 
+                            `${allBlockStudents.length}`
+                          } students
+                        </div>
                       </div>
                     </CardTitle>
                   </CardHeader>
@@ -1774,7 +1954,13 @@ const HostelInchargeDashboard = () => {
                         ) : (
                           filteredBlockStudents.map(student => (
                             <div key={student._id} className={`p-3 rounded-lg border ${theme === 'dark' ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-gray-50'}`}>
-                              <div className="flex justify-between items-start">
+                              <div className="flex justify-between items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={isStudentSelected(student._id)}
+                                  onChange={() => toggleStudentSelection(student._id)}
+                                />
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-medium truncate">{highlightMatch(student?.name, searchTerm)}</h4>
                                   <p className="text-sm text-gray-500 truncate">{highlightMatch(student?.rollNumber, searchTerm)}</p>
@@ -1832,6 +2018,55 @@ const HostelInchargeDashboard = () => {
                 );
               })}
             </div>
+
+            {/* Passed Out Students */}
+            <Card className={`${theme === 'dark' ? 'bg-gray-800/90 border-gray-700' : 'glass-card'}`}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Passed Out Students
+                </CardTitle>
+                <p className="text-sm text-gray-500">Students marked as Graduated cannot create new requests but can be viewed here.</p>
+              </CardHeader>
+              <CardContent>
+                {passedOutStudents.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">No passed out students yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-2 px-2">Name</th>
+                          <th className="py-2 px-2">Roll</th>
+                          <th className="py-2 px-2">Email</th>
+                          <th className="py-2 px-2">Block</th>
+                          <th className="py-2 px-2">Floor</th>
+                          <th className="py-2 px-2">Room</th>
+                          <th className="py-2 px-2">Branch</th>
+                          <th className="py-2 px-2">Semester</th>
+                          <th className="py-2 px-2">Year</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {passedOutStudents.map(s => (
+                          <tr key={s._id} className="border-b">
+                            <td className="py-2 px-2">{s.name}</td>
+                            <td className="py-2 px-2">{s.rollNumber}</td>
+                            <td className="py-2 px-2">{s.email}</td>
+                            <td className="py-2 px-2">{s.hostelBlock}</td>
+                            <td className="py-2 px-2">{s.floor}</td>
+                            <td className="py-2 px-2">{s.roomNumber}</td>
+                            <td className="py-2 px-2">{s.branch}</td>
+                            <td className="py-2 px-2">{s.semester}</td>
+                            <td className="py-2 px-2">{s.year || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Reports Tab */}
