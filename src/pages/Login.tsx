@@ -456,6 +456,8 @@ const Login = () => {
               theme === 'dark' ? 'text-slate-500' : 'text-slate-400'
             }`}>
               <p>© Venkatnarayan Karanam</p>
+              <p>© Pradeep Abburi</p>
+              <p>© John Paul</p>
             </div>
           </Card>
         </div>
