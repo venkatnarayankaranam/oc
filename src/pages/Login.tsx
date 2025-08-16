@@ -455,9 +455,7 @@ const Login = () => {
             <div className={`text-center text-xs ${
               theme === 'dark' ? 'text-slate-500' : 'text-slate-400'
             }`}>
-              <p>© Venkatnarayan Karanam</p>
-              <p>© Pradeep Abburi</p>
-              <p>© John Paul</p>
+              <p>© Venkatnarayan Karanam, Pradeep Abburi, John Paul</p>
             </div>
           </Card>
         </div>
