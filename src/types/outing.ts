@@ -30,6 +30,7 @@ export interface OutingRequest {
   parentPhoneNumber: string;
   branch: string;
   semester: string;
+  floorInchargeApproved?: boolean; // Added to track floor incharge approval
 }
 
 export interface Stats {

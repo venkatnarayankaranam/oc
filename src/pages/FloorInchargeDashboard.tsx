@@ -52,11 +52,9 @@ const FloorInchargeDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(15000); // 15 seconds
   const [isStudentsModalOpen, setIsStudentsModalOpen] = useState(false);
-  const [approvedStudents, setApprovedStudents] = useState<Student[]>([]);
   const [isApprovedModalOpen, setIsApprovedModalOpen] = useState(false);
   
   // Current data based on toggle
-  const pendingRequests = requestType === 'outing' ? outingPendingRequests : homePermissionPendingRequests;
   const stats = requestType === 'outing' ? outingStats : homePermissionStats;
 
   // Emergency requests that bypass floor incharge
@@ -109,6 +107,7 @@ const FloorInchargeDashboard = () => {
           parentPhoneNumber: req.studentId?.parentPhoneNumber || 'N/A',
           branch: req.studentId?.branch || 'N/A',
           semester: req.studentId?.semester || 'N/A',
+          floorInchargeApproved: req.floorInchargeApproved, // Add this line
         })) || [];
 
         console.log('📊 Transformed outing requests:', {
@@ -118,20 +117,37 @@ const FloorInchargeDashboard = () => {
         });
 
         setOutingRequests(transformedRequests);
-        const pending = transformedRequests.filter((req: any) => req.status === 'pending');
+        // Filter pending requests - exclude those approved by floor incharge
+        const pending = transformedRequests.filter((req: any) => 
+          req.status === 'pending' && !req.floorInchargeApproved
+        );
         setOutingPendingRequests(pending);
 
-        // Compute counts locally to ensure immediate UI update
-        const approvedCount = transformedRequests.filter((req: any) => req.status === 'approved').length;
-        const deniedCount = transformedRequests.filter((req: any) => req.status === 'denied').length;
-        const pendingCount = pending.length;
+        // Use server-provided stats if available, otherwise compute locally
+        if (requestsResponse.data.stats) {
+          console.log('📊 Using server-provided stats:', requestsResponse.data.stats);
+          setOutingStats(prev => ({
+            ...prev,
+            pending: requestsResponse.data.stats.pending,
+            approved: requestsResponse.data.stats.approved,
+            denied: requestsResponse.data.stats.denied,
+          }));
+        } else {
+          console.log('⚠️ No server stats, computing locally');
+          // Compute counts locally as fallback
+          const approvedCount = transformedRequests.filter((req: any) => 
+            req.status === 'approved' || req.floorInchargeApproved === true
+          ).length;
+          const deniedCount = transformedRequests.filter((req: any) => req.status === 'denied').length;
+          const pendingCount = pending.length;
 
-        setOutingStats(prev => ({
-          ...prev,
-          pending: pendingCount,
-          approved: approvedCount,
-          denied: deniedCount,
-        }));
+          setOutingStats(prev => ({
+            ...prev,
+            pending: pendingCount,
+            approved: approvedCount,
+            denied: deniedCount,
+          }));
+        }
 
         console.log('✅ Outing data updated successfully');
       } else {
@@ -140,7 +156,7 @@ const FloorInchargeDashboard = () => {
       }
 
       if (approvedResponse.data?.success) {
-        setApprovedStudents(approvedResponse.data.students);
+        // setApprovedStudents(approvedResponse.data.students); // This line was removed
       }
     } catch (error: any) {
       console.error("Outing data fetch error:", error);
@@ -227,11 +243,13 @@ const FloorInchargeDashboard = () => {
 
   const fetchData = async () => {
     try {
+      console.log('🔄 Starting data refresh...');
       setRefreshing(true);
       await Promise.all([
         fetchOutingData(),
         fetchHomePermissionData()
       ]);
+      console.log('✅ Data refresh completed successfully');
       setRefreshInterval(15000); // Reset to normal interval on success
     } catch (error: any) {
       console.error("General data fetch error:", error);
@@ -285,11 +303,20 @@ const FloorInchargeDashboard = () => {
 
     // Handle room joining after successful connection
     socket.on('connect', () => {
+      console.log('[Socket] Connected successfully:', socket.id);
       if (userDetails.assignedBlock && userDetails.assignedFloor) {
         const room = `${userDetails.assignedBlock}-${userDetails.assignedFloor}`;
         console.log('[Socket] Joining room:', room);
         socket.emit('join-room', { room });
       }
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('[Socket] Connection error:', error);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[Socket] Disconnected:', reason);
     });
 
     // Listen for real-time updates
@@ -313,6 +340,24 @@ const FloorInchargeDashboard = () => {
       fetchHomePermissionData();
     });
 
+    // Listen for floor incharge specific updates
+    socket.on('floor-incharge-request-updated', (data) => {
+      console.log('[Socket] Received floor incharge request update:', data);
+      fetchOutingData();
+    });
+
+    // Listen for home permission approval updates
+    socket.on('home-permission-approved', (data) => {
+      console.log('[Socket] Received home permission approval:', data);
+      fetchHomePermissionData();
+    });
+
+    // Listen for home permission denial updates
+    socket.on('home-permission-denied', (data) => {
+      console.log('[Socket] Received home permission denial:', data);
+      fetchHomePermissionData();
+    });
+
     // Listen for emergency request notifications
     socket.on('emergency-request', (data) => {
       console.log('[Socket] Emergency request received:', data);
@@ -328,12 +373,12 @@ const FloorInchargeDashboard = () => {
 
   const handleRequestAction = async (requestId: string, action: 'approve' | 'deny') => {
     setLoading(true);
-    const originalOutingRequests = [...outingRequests];
-    const originalOutingPending = [...outingPendingRequests];
-    const originalOutingStats = {...outingStats};
-    const originalHomeRequests = [...homePermissionRequests];
-    const originalHomePending = [...homePermissionPendingRequests];
-    const originalHomeStats = {...homePermissionStats};
+    // const originalOutingRequests = [...outingRequests]; // Removed unused variable
+    // const originalOutingPending = [...outingPendingRequests]; // Removed unused variable
+    // const originalOutingStats = {...outingStats}; // Removed unused variable
+    // const originalHomeRequests = [...homePermissionRequests]; // Removed unused variable
+    // const originalHomePending = [...homePermissionPendingRequests]; // Removed unused variable
+    // const originalHomeStats = {...homePermissionStats}; // Removed unused variable
 
     try {
       console.log('Sending request action:', {
@@ -357,7 +402,14 @@ const FloorInchargeDashboard = () => {
         } else {
           comments = window.prompt('Add denial reason (optional):') || 'Denied by Floor Incharge';
         }
-        response = await axiosInstance.patch(`/outings/floor-incharge/request/${requestId}/${action}`, { comments });
+        
+        // Use the correct endpoint for outing requests
+        if (action === 'approve') {
+          response = await axiosInstance.patch(`/outings/floor-incharge/request/${requestId}/approve`, { comments });
+        } else {
+          // For deny, use the correct endpoint from outings.js
+          response = await axiosInstance.patch(`/outings/floor-incharge/request/${requestId}/deny`, { comments });
+        }
       } else {
         // For home permissions, use the approve/deny endpoints
         if (action === 'approve') {
@@ -400,7 +452,79 @@ const FloorInchargeDashboard = () => {
 
       toast.success(`${requestType === 'outing' ? 'Outing' : 'Home permission'} request ${action}d successfully`);
       
-      // Refresh data to show updated state
+      // Immediately update the local state for better UX
+      if (requestType === 'outing') {
+        console.log('🔄 Updating outing request state:', { requestId, action });
+        
+        // Update the specific request status
+        setOutingRequests(prev => {
+          const updated = prev.map(req => 
+            req.id === requestId 
+              ? { 
+                  ...req, 
+                  status: (action === 'approve' ? 'approved' : 'denied') as 'approved' | 'denied',
+                  floorInchargeApproved: action === 'approve'
+                }
+              : req
+          );
+          console.log('📊 Updated outing requests:', updated.length);
+          return updated;
+        });
+        
+        // Remove from pending requests
+        setOutingPendingRequests(prev => {
+          const filtered = prev.filter(req => req.id !== requestId);
+          console.log('📋 Updated pending requests:', filtered.length);
+          return filtered;
+        });
+        
+        // Update stats immediately but be conservative
+        setOutingStats(prev => {
+          const updated = {
+            ...prev,
+            pending: Math.max(0, prev.pending - 1), // Ensure pending doesn't go below 0
+            [action === 'approve' ? 'approved' : 'denied']: prev[action === 'approve' ? 'approved' : 'denied'] + 1
+          };
+          console.log('📈 Updated outing stats:', updated);
+          return updated;
+        });
+      } else {
+        console.log('🔄 Updating home permission request state:', { requestId, action });
+        
+        // Update home permission requests
+        setHomePermissionRequests(prev => {
+          const updated = prev.map(req => 
+            req.id === requestId 
+              ? { 
+                  ...req, 
+                  floorInchargeApproval: (action === 'approve' ? 'approved' : 'denied') as 'pending' | 'approved' | 'denied'
+                }
+              : req
+          );
+          console.log('📊 Updated home permission requests:', updated.length);
+          return updated;
+        });
+        
+        // Remove from pending requests
+        setHomePermissionPendingRequests(prev => {
+          const filtered = prev.filter(req => req.id !== requestId);
+          console.log('📋 Updated pending home permission requests:', filtered.length);
+          return filtered;
+        });
+        
+        // Update stats immediately but be conservative
+        setHomePermissionStats(prev => {
+          const updated = {
+            ...prev,
+            pending: Math.max(0, prev.pending - 1), // Ensure pending doesn't go below 0
+            [action === 'approve' ? 'approved' : 'denied']: prev[action === 'approve' ? 'approved' : 'denied'] + 1
+          };
+          console.log('📈 Updated home permission stats:', updated);
+          return updated;
+        });
+      }
+      
+      // Refresh data to ensure consistency with server
       console.log('🔄 Refreshing data after approval...');
       await fetchData();
       console.log('✅ Data refresh completed');
@@ -414,16 +538,9 @@ const FloorInchargeDashboard = () => {
         requestType
       });
       
-      // Restore original data
-      if (requestType === 'outing') {
-        setOutingRequests(originalOutingRequests);
-        setOutingPendingRequests(originalOutingPending);
-        setOutingStats(originalOutingStats);
-      } else {
-        setHomePermissionRequests(originalHomeRequests);
-        setHomePermissionPendingRequests(originalHomePending);
-        setHomePermissionStats(originalHomeStats);
-      }
+      // Refresh data to restore correct state
+      console.log('🔄 Refreshing data to restore correct state after error...');
+      await fetchData();
 
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
@@ -593,16 +710,48 @@ const FloorInchargeDashboard = () => {
           </Card>
         </div>
 
+        {/* Request Summary Section */}
+        <Card className={`${theme === 'dark' ? 'bg-gray-800/90 border-gray-700' : 'glass-card'}`}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              <span>Request Summary</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                  {outingRequests.filter(req => req.status === 'pending' && !req.floorInchargeApproved).length}
+                </div>
+                <div className="text-sm text-yellow-700 dark:text-yellow-300">Awaiting Floor Incharge</div>
+              </div>
+              <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {outingRequests.filter(req => req.floorInchargeApproved && req.status === 'pending').length}
+                </div>
+                <div className="text-sm text-blue-700 dark:text-blue-300">Floor Approved - Waiting for Hostel Incharge</div>
+              </div>
+              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {outingRequests.filter(req => req.status === 'approved').length}
+                </div>
+                <div className="text-sm text-green-700 dark:text-green-300">Fully Approved</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className={`${theme === 'dark' ? 'bg-gray-800/90 border-gray-700' : 'glass-card'}`}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {requestType === 'outing' ? <Clock className="w-5 h-5" /> : <Home className="w-5 h-5" />}
-              <span>Pending {requestType === 'outing' ? 'Outing' : 'Home Permission'} Requests ({pendingRequests.length})</span>
+              <span>Pending {requestType === 'outing' ? 'Outing' : 'Home Permission'} Requests ({requestType === 'outing' ? outingPendingRequests.length : homePermissionPendingRequests.length})</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              {pendingRequests.length > 0 ? (
+              {(requestType === 'outing' ? outingPendingRequests : homePermissionPendingRequests).length > 0 ? (
                 <table className="w-full">
                   <thead>
                     <tr className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -628,7 +777,7 @@ const FloorInchargeDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((request: OutingRequest | HomePermissionRequest) => (
+                    {(requestType === 'outing' ? outingPendingRequests : homePermissionPendingRequests).map((request: OutingRequest | HomePermissionRequest) => (
                       <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                         <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).name : (request as HomePermissionRequest).studentName}</td>
                         <td className="py-3">{request.rollNumber}</td>
@@ -807,12 +956,12 @@ const FloorInchargeDashboard = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Home className="w-5 h-5" />
-              <span>All Outing Requests ({pendingRequests.length})</span>
+              <span>All Outing Requests ({outingRequests.length})</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              {pendingRequests.length > 0 ? (
+              {outingRequests.length > 0 ? (
                 <table className="w-full">
                   <thead>
                     <tr className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -828,23 +977,35 @@ const FloorInchargeDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((request: OutingRequest | HomePermissionRequest) => (
+                    {outingRequests.map((request: OutingRequest) => (
                       <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).name : (request as HomePermissionRequest).studentName}</td>
+                        <td className="py-3">{request.name}</td>
                         <td className="py-3">{request.rollNumber}</td>
                         <td className="py-3">{formatFloorValue(request.floor)}</td>
-                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).roomNo : (request as HomePermissionRequest).roomNumber}</td>
-                        <td className="py-3">{requestType === 'outing' ? (request as OutingRequest).date : `${new Date((request as HomePermissionRequest).goingDate).toLocaleDateString()} - ${new Date((request as HomePermissionRequest).incomingDate).toLocaleDateString()}`}</td>
-                        <td className="py-3">{requestType === 'outing' ? `${(request as OutingRequest).outTime} - ${(request as OutingRequest).inTime}` : (request as HomePermissionRequest).homeTownName}</td>
+                        <td className="py-3">{request.roomNo}</td>
+                        <td className="py-3">{request.date}</td>
+                        <td className="py-3">{request.outTime} - {request.inTime}</td>
                         <td className="py-3">{request.purpose}</td>
                         <td className="py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              request.status === 'pending' && !request.floorInchargeApproved ? 'bg-yellow-100 text-yellow-800' :
+                              request.status === 'approved' || request.floorInchargeApproved ? 'bg-green-100 text-green-800' :
+                              request.status === 'denied' ? 'bg-red-100 text-red-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}>
+                              {request.floorInchargeApproved && request.status === 'pending' ? 'Floor Approved' :
+                               request.status === 'pending' ? 'Pending' :
+                               request.status === 'approved' ? 'Fully Approved' :
+                               request.status === 'denied' ? 'Denied' : 'Unknown'}
+                            </span>
+                            {/* Show additional info for floor-approved requests */}
+                            {request.floorInchargeApproved && request.status === 'pending' && (
+                              <span className="text-xs text-gray-500">
+                                Waiting for Hostel Incharge
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 text-right">
                           <div className="flex justify-end gap-2">
@@ -856,7 +1017,8 @@ const FloorInchargeDashboard = () => {
                             >
                               View
                             </Button>
-                            {request.status === "pending" && (
+                            {/* Only show approve/deny buttons for requests that haven't been approved by floor incharge */}
+                            {request.status === "pending" && !request.floorInchargeApproved && (
                               <>
                                 <Button
                                   variant="outline"
@@ -878,6 +1040,12 @@ const FloorInchargeDashboard = () => {
                                 </Button>
                               </>
                             )}
+                            {/* Show status for approved requests */}
+                            {request.floorInchargeApproved && request.status === 'pending' && (
+                              <span className="text-sm text-green-600 font-medium px-2 py-1 bg-green-50 rounded">
+                                ✓ Floor Approved
+                              </span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -887,7 +1055,7 @@ const FloorInchargeDashboard = () => {
               ) : (
                 <div className="text-center py-12">
                   <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    No pending requests found.
+                    No outing requests found.
                   </p>
                 </div>
               )}
@@ -1076,10 +1244,23 @@ const FloorInchargeDashboard = () => {
             <DialogHeader className="flex flex-row items-center justify-between">
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5" />
-                <span>Approved Outing Students ({approvedStudents.length})</span>
+                <span>Approved Outing Students ({outingRequests.filter(req => req.status === 'approved' || req.floorInchargeApproved).length})</span>
               </DialogTitle>
               <PDFDownloadLink
-                document={<ApprovedStudentsPDF students={handleApprovedStudentsData(approvedStudents)} />}
+                document={<ApprovedStudentsPDF students={handleApprovedStudentsData(outingRequests.filter(req => req.status === 'approved' || req.floorInchargeApproved).map(req => ({
+                  _id: req.studentId,
+                  name: req.name,
+                  rollNumber: req.rollNumber,
+                  floor: [req.floor], // Convert string to string array
+                  roomNumber: req.roomNo,
+                  outTime: req.outTime,
+                  inTime: req.inTime,
+                  phoneNumber: req.phoneNumber,
+                  parentPhoneNumber: req.parentPhoneNumber,
+                  branch: req.branch,
+                  semester: req.semester,
+                  email: req.email
+                })))} />}
                 fileName={`approved-students-${new Date().toISOString().split('T')[0]}.pdf`}
               >
                 {({ loading }) => (
@@ -1107,19 +1288,19 @@ const FloorInchargeDashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {approvedStudents.map((student, index) => (
-                    <tr key={student._id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+                  {outingRequests.filter(req => req.status === 'approved' || req.floorInchargeApproved).map((request, index) => (
+                    <tr key={request.id} className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
                       <td className="py-3">{index + 1}</td>
-                      <td className="py-3">{student.name || 'N/A'}</td>
-                      <td className="py-3">{student.rollNumber || 'N/A'}</td>
-                      <td className="py-3">{formatFloorValue(student.floor)}</td>
-                      <td className="py-3">{student.roomNumber || 'N/A'}</td>
-                      <td className="py-3">{student.outTime || 'N/A'}</td>
-                      <td className="py-3">{student.inTime || 'N/A'}</td>
-                      <td className="py-3">{student.phoneNumber || 'N/A'}</td>
-                      <td className="py-3">{student.parentPhoneNumber || 'N/A'}</td>
-                      <td className="py-3">{student.branch || 'N/A'}</td>
-                      <td className="py-3">{student.semester || 'N/A'}</td>
+                      <td className="py-3">{request.name || 'N/A'}</td>
+                      <td className="py-3">{request.rollNumber || 'N/A'}</td>
+                      <td className="py-3">{formatFloorValue(request.floor)}</td>
+                      <td className="py-3">{request.roomNo || 'N/A'}</td>
+                      <td className="py-3">{request.outTime || 'N/A'}</td>
+                      <td className="py-3">{request.inTime || 'N/A'}</td>
+                      <td className="py-3">{request.phoneNumber || 'N/A'}</td>
+                      <td className="py-3">{request.parentPhoneNumber || 'N/A'}</td>
+                      <td className="py-3">{request.branch || 'N/A'}</td>
+                      <td className="py-3">{request.semester || 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
